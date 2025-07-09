@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mood Detection Classifier</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/teachable-machine"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .input-section {
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #preview-container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .preview-box {
+            width: 300px;
+            border: 2px dashed #ccc;
+            padding: 10px;
+            min-height: 200px;
+        }
+        #webcam-preview {
+            transform: scaleX(-1); /* Mirror effect */
+            max-width: 100%;
+        }
+        #file-preview {
+            max-width: 100%;
+        }
+        #result {
+            font-size: 20px;
+            margin-top: 20px;
+            font-weight: bold;
+            min-height: 50px;
+            padding: 15px;
+            background-color: #f8f8f8;
+            border-radius: 5px;
+        }
+        .hidden {
+            display: none;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Mood Detection Classifier</h1>
+    <p>Detect mood/emotion from images using either file upload or webcam</p>
+    
+    <div class="input-section">
+        <div>
+            <input type="file" id="file-upload" accept="image/*" class="hidden" />
+            <button onclick="document.getElementById('file-upload').click()">Upload Image</button>
+            <button onclick="predictFromFile()" id="predict-file-btn" disabled>Predict from File</button>
+        </div>
+        <div>
+            <button onclick="startWebcam()" id="start-webcam-btn">Start Webcam</button>
+            <button onclick="stopWebcam()" id="stop-webcam-btn" disabled>Stop Webcam</button>
+            <button onclick="predictFromWebcam()" id="predict-webcam-btn" disabled>Predict from Webcam</button>
+        </div>
+    </div>
+    
+    <div id="preview-container">
+        <div class="preview-box">
+            <h2>Uploaded Image</h2>
+            <div id="file-preview-container"></div>
+        </div>
+        <div class="preview-box">
+            <h2>Webcam Feed</h2>
+            <video id="webcam-preview" autoplay playsinline></video>
+        </div>
+    </div>
+    
+    <div id="result"></div>
+    
+    <script>
+        let model;
+        let webcamStream;
+        let currentFileImage = null;
+        
+        // Initialize the model when page loads
+        async function init() {
+            model = await tmImage.load('./model.json', './metadata.json');
+            console.log("Model loaded successfully!");
+            
+            // Enable file upload listener
+            document.getElementById('file-upload').addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const img = document.createElement('img');
+                    img.id = 'file-preview';
+                    img.src = URL.createObjectURL(file);
+                    img.onload = function() {
+                        document.getElementById('file-preview-container').innerHTML = '';
+                        document.getElementById('file-preview-container').appendChild(img);
+                        currentFileImage = img;
+                        document.getElementById('predict-file-btn').disabled = false;
+                    };
+                }
+            });
+        }
+        
+        // Start webcam
+        async function startWebcam() {
+            try {
+                const video = document.getElementById('webcam-preview');
+                webcamStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'user' }, 
+                    audio: false 
+                });
+                video.srcObject = webcamStream;
+                
+                document.getElementById('start-webcam-btn').disabled = true;
+                document.getElementById('stop-webcam-btn').disabled = false;
+                document.getElementById('predict-webcam-btn').disabled = false;
+            } catch (err) {
+                console.error("Error accessing webcam:", err);
+                alert("Could not access webcam. Please ensure you've granted camera permissions.");
+            }
+        }
+        
+        // Stop webcam
+        function stopWebcam() {
+            const video = document.getElementById('webcam-preview');
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                
+                document.getElementById('start-webcam-btn').disabled = false;
+                document.getElementById('stop-webcam-btn').disabled = true;
+                document.getElementById('predict-webcam-btn').disabled = true;
+            }
+        }
+        
+        // Predict from uploaded file
+        async function predictFromFile() {
+            if (!currentFileImage) {
+                alert('Please upload an image first!');
+                return;
+            }
+            
+            const prediction = await model.predict(currentFileImage);
+            displayResult(prediction);
+        }
+        
+        // Predict from webcam
+        async function predictFromWebcam() {
+            const video = document.getElementById('webcam-preview');
+            const prediction = await model.predict(video);
+            displayResult(prediction);
+        }
+        
+        // Display prediction results
+        function displayResult(prediction) {
+            const topPrediction = prediction[0];
+            const resultDiv = document.getElementById('result');
+            
+            // Create a more detailed result display
+            let resultHTML = `
+                <div><strong>Detected Mood:</strong> ${topPrediction.className} (${Math.round(topPrediction.probability * 100)}%)</div>
+                <div style="margin-top: 10px;"><strong>All Predictions:</strong></div>
+                <ul style="text-align: left; display: inline-block; margin-top: 5px;">
+            `;
+            
+            prediction.forEach(p => {
+                resultHTML += `<li>${p.className}: ${Math.round(p.probability * 100)}%</li>`;
+            });
+            
+            resultHTML += `</ul>`;
+            resultDiv.innerHTML = resultHTML;
+            
+            // Log full results to console
+            console.log('Prediction results:', prediction);
+        }
+        
+        // Initialize when page loads
+        window.onload = init;
+    </script>
+</body>
+</html>
