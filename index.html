@@ -46,13 +46,19 @@
             border: 2px dashed #ccc;
             padding: 10px;
             min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
         #webcam-preview {
-            transform: scaleX(-1); /* Mirror effect */
+            transform: scaleX(-1);
             max-width: 100%;
+            max-height: 180px;
         }
         #file-preview {
             max-width: 100%;
+            max-height: 180px;
         }
         #result {
             font-size: 20px;
@@ -69,6 +75,10 @@
         h2 {
             margin-top: 0;
             font-size: 18px;
+        }
+        .placeholder-text {
+            color: #888;
+            font-style: italic;
         }
     </style>
 </head>
@@ -92,11 +102,14 @@
     <div id="preview-container">
         <div class="preview-box">
             <h2>Uploaded Image</h2>
-            <div id="file-preview-container"></div>
+            <div id="file-preview-container">
+                <p class="placeholder-text">No image uploaded</p>
+            </div>
         </div>
         <div class="preview-box">
             <h2>Webcam Feed</h2>
             <video id="webcam-preview" autoplay playsinline></video>
+            <p class="placeholder-text" id="webcam-placeholder">Webcam not active</p>
         </div>
     </div>
     
@@ -112,19 +125,25 @@
             model = await tmImage.load('./model.json', './metadata.json');
             console.log("Model loaded successfully!");
             
-            // Enable file upload listener
+            // File upload listener - FIXED VERSION
             document.getElementById('file-upload').addEventListener('change', function(e) {
                 const file = e.target.files[0];
                 if (file) {
-                    const img = document.createElement('img');
-                    img.id = 'file-preview';
-                    img.src = URL.createObjectURL(file);
-                    img.onload = function() {
-                        document.getElementById('file-preview-container').innerHTML = '';
-                        document.getElementById('file-preview-container').appendChild(img);
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        const img = document.createElement('img');
+                        img.id = 'file-preview';
+                        img.src = event.target.result;
+                        
+                        // Clear previous content and add new image
+                        const container = document.getElementById('file-preview-container');
+                        container.innerHTML = '';
+                        container.appendChild(img);
+                        
                         currentFileImage = img;
                         document.getElementById('predict-file-btn').disabled = false;
                     };
+                    reader.readAsDataURL(file);
                 }
             });
         }
@@ -133,11 +152,14 @@
         async function startWebcam() {
             try {
                 const video = document.getElementById('webcam-preview');
+                const placeholder = document.getElementById('webcam-placeholder');
+                
                 webcamStream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: 'user' }, 
                     audio: false 
                 });
                 video.srcObject = webcamStream;
+                placeholder.classList.add('hidden');
                 
                 document.getElementById('start-webcam-btn').disabled = true;
                 document.getElementById('stop-webcam-btn').disabled = false;
@@ -151,9 +173,12 @@
         // Stop webcam
         function stopWebcam() {
             const video = document.getElementById('webcam-preview');
+            const placeholder = document.getElementById('webcam-placeholder');
+            
             if (webcamStream) {
                 webcamStream.getTracks().forEach(track => track.stop());
                 video.srcObject = null;
+                placeholder.classList.remove('hidden');
                 
                 document.getElementById('start-webcam-btn').disabled = false;
                 document.getElementById('stop-webcam-btn').disabled = true;
@@ -184,7 +209,6 @@
             const topPrediction = prediction[0];
             const resultDiv = document.getElementById('result');
             
-            // Create a more detailed result display
             let resultHTML = `
                 <div><strong>Detected Mood:</strong> ${topPrediction.className} (${Math.round(topPrediction.probability * 100)}%)</div>
                 <div style="margin-top: 10px;"><strong>All Predictions:</strong></div>
@@ -198,7 +222,6 @@
             resultHTML += `</ul>`;
             resultDiv.innerHTML = resultHTML;
             
-            // Log full results to console
             console.log('Prediction results:', prediction);
         }
         
